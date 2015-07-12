@@ -1,0 +1,2 @@
+/var/spool/torque/mom_priv/jobs/1770024.nid11293.SC: line 19: syntax error near unexpected token `('
+/var/spool/torque/mom_priv/jobs/1770024.nid11293.SC: line 19: `void setupMPI(int *argc, char ***argv, int *myRank, int *numProcs) {'

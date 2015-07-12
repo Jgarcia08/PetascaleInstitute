@@ -1,0 +1,12 @@
+----------------------------------------
+Begin Torque Prologue on nid25330
+at Wed May 27 15:22:28 CDT 2015
+Job Id:			1770029.nid11293
+Username:		tra463
+Group:			TRAIN_jt4
+Job name:		pi-mpi.c
+Requested resources:	neednodes=2:ppn=32,nodes=2:ppn=32,walltime=00:00:10
+Queue:			normal
+Account:		jt4
+End Torque Prologue:  0.038 elapsed
+----------------------------------------

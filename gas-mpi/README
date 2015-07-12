@@ -1,0 +1,22 @@
+HPCU Bi-Weekly Challenge: Distributed Ideal Gas
+MPI version
+README
+Author: Aaron Weeden, Shodor Education Foundation
+
+To compile this program, run the following command in this directory:
+
+make
+
+To run the program, run the following command in this directory.  Replace the
+letter X with the number of processes you wish to use.  Replace the letter Y
+with the path to the machine file:
+
+mpirun -np X --machinefile Y ./ideal-gas
+
+The program generates ASCII output of the simulation, and a large Terminal
+window may be needed to view it properly.
+
+To remove the files generated during compilation, run the following command:
+
+make clean
+

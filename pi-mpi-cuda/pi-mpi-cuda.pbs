@@ -1,0 +1,6 @@
+#!/bin/bash
+#PBS -l nodes=2:xk
+#PBS -l walltime=00:00:01
+
+cd $PBS_O_WORKDIR
+aprun -n2 ./pi-mpi-cuda

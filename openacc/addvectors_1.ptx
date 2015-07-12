@@ -1,0 +1,84 @@
+      .version 3.1
+      .target sm_35
+      .address_size 64
+
+      // Cray C : Version 8.3.10  (u83060f83130i83183p83328a83009z83328)
+
+      .file	1	"addvectors.c"
+
+      .entry main$ck_L35_1(
+               .param .s64 $$arg_ptr_acc_b_T10_T39,
+               .param .s64 $$arg_ptr_acc_a_T13_T40,
+               .param .s64 $$arg_ptr_acc_c_T16_T41 )
+      {
+      .reg .pred %p<2>;
+      .reg .b32  %b<2>;
+      .reg .s32  %s<2>;
+      .reg .s64  %sd<5>;
+      .reg .u32  %u<4>;
+      .reg .u64  %ud<4>;
+      .reg .f64  %fd<4>;
+      //
+      .loc                 1  35  0
+      .loc                 1  35  0
+      ld.param.s64         %ud3, [$$arg_ptr_acc_c_T16_T41];// addvectors.c:35 : $$c_S6_T38
+      ld.param.s64         %ud2, [$$arg_ptr_acc_a_T13_T40];// addvectors.c:35 : $$a_S5_T37
+      ld.param.s64         %ud1, [$$arg_ptr_acc_b_T10_T39];// addvectors.c:35 : $$b_S4_T36
+      mov.u32              %u1, %ntid.x;               // addvectors.c:35
+      mov.u32              %u2, %ctaid.x;              // addvectors.c:35
+      mov.u32              %u3, %tid.x;                // addvectors.c:35
+      mad.lo.u32           %s1, %u1, %u2, %u3;         // addvectors.c:35 : $$id_T19
+      setp.ge.s32          %p1, %s1, 10000;            // addvectors.c:35
+      @%p1 bra             $main$ck_L35_1__l59__;      // addvectors.c:35
+      .loc                 1  36  0
+      shl.b32              %b1, %s1, 3;                // addvectors.c:36
+      cvt.s64.s32          %sd1, %b1;                  // addvectors.c:36
+      add.s64              %sd2, %ud1, %sd1;           // addvectors.c:36
+      add.s64              %sd3, %ud2, %sd1;           // addvectors.c:36
+      ld.global.nc.f64     %fd1, [%sd3];               // addvectors.c:36 : 0[.(long) $$a_S5_T37,$$id_T19,ex].L
+      ld.global.nc.f64     %fd2, [%sd2];               // addvectors.c:36 : 0[.(long) $$b_S4_T36,$$id_T19,ex].L
+      add.rn.f64           %fd3, %fd1, %fd2;           // addvectors.c:36
+      add.s64              %sd4, %ud3, %sd1;           // addvectors.c:36
+      st.global.f64        [%sd4], %fd3;               // addvectors.c:36 : 0[.(long) $$c_S6_T38,$$id_T19].L
+$main$ck_L35_1__l59__:
+      exit;
+      } // main$ck_L35_1
+
+
+      .entry main$ck_L40_2(
+               .param .s64 $$arg_ptr_acc_c_T16_T42,
+               .param .s64 $$arg_ptr_accshare_T23_T43 )
+      {
+      .reg .pred %p<3>;
+      .reg .b32  %b<2>;
+      .reg .s32  %s<2>;
+      .reg .s64  %sd<4>;
+      .reg .u32  %u<2>;
+      .reg .u64  %ud<2>;
+      .reg .f64  %fd<2>;
+      //
+      .loc                 1  40  0
+      .loc                 1  40  0
+      ld.param.s64         %ud1, [$$arg_ptr_acc_c_T16_T42];// addvectors.c:40 : $$c_S7_T35
+      cvt.s32.u32          %s1, %ctaid.x;              // addvectors.c:40 : $$id_T21
+      setp.ge.s32          %p1, %s1, 10000;            // addvectors.c:40
+      @%p1 bra             $main$ck_L40_2__l61__;      // addvectors.c:40
+      .loc                 1  41  0
+      bar.sync             0;                          // addvectors.c:41
+      mov.u32              %u1, %tid.x;                // addvectors.c:41
+      setp.ne.u32          %p2, %u1, 0;                // addvectors.c:41
+      @%p2 bra             $main$ck_L40_2__l34__;      // addvectors.c:41
+      .loc                 1  41  0
+      shl.b32              %b1, %s1, 3;                // addvectors.c:41
+      cvt.s64.s32          %sd1, %b1;                  // addvectors.c:41
+      add.s64              %sd2, %ud1, %sd1;           // addvectors.c:41
+      ld.global.nc.f64     %fd1, [%sd2];               // addvectors.c:41 : 0[.(long) $$c_S7_T35,$$id_T21,ex].L
+      ld.param.s64         %sd3, [$$arg_ptr_accshare_T23_T43];// addvectors.c:41 : $$arg_ptr_accshare_T23_T43
+      st.global.f64        [%sd3], %fd1;               // addvectors.c:41 : 0[$$arg_ptr_accshare_T23_T43,0].L
+$main$ck_L40_2__l34__:
+      .loc                 1  41  0
+      bar.sync             0;                          // addvectors.c:41
+$main$ck_L40_2__l61__:
+      exit;
+      } // main$ck_L40_2
+

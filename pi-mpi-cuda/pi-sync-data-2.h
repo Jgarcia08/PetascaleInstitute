@@ -1,0 +1,1 @@
+void syncData(double *area);

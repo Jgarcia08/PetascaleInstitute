@@ -1,0 +1,14 @@
+----------------------------------------
+Begin Torque Prologue on nid25328
+at Wed May 27 09:26:45 CDT 2015
+Job Id:			1768312.nid11293
+Username:		aweeden
+Group:			EOT_jtp
+Job name:		pi-mpi-1.pbs
+Requested resources:	neednodes=1:ppn=32:xe,nodes=1:ppn=32:xe,walltime=00:00:01
+Queue:			normal
+Account:		jtp
+End Torque Prologue:  0.023 elapsed
+----------------------------------------
+3.304518326248318
+Application 24878801 resources: utime ~0s, stime ~1s, Rss ~27276, inblocks ~6598, outblocks ~16661

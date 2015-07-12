@@ -1,0 +1,610 @@
+/* Parallelization: Infectious Disease
+ * By Aaron Weeden, Shodor Education Foundation, Inc.
+ * November 2011
+ *
+ * Parallel code -- MPI for distributed memory (processes), OpenMP for shared
+ *  memory (threads). "Hybrid" uses both (in which case each MPI process can 
+ *  spawn OpenMP threads).
+ *
+ * Parts corresponding to the module's algorithm are indicated by comments that
+ *  begin with ALG I:, ALG I.A:, ALG I.A.1:, etc.
+ *
+ * Note on naming scheme:  Variables that begin with "our" are private to
+ *  processes and shared by threads ("our" is from the perspective of the
+ *  threads).  Variables that begin with "my" are private to threads (again,
+ *  "my" from the perspective of threads). */
+
+#include <assert.h> /* for assert */
+#include <stdio.h> /* printf */
+#include <stdlib.h> /* malloc, free, and various others */
+#include <time.h> /* time is used to seed the random number generator */
+#include <unistd.h> /* random, getopt, some others */
+#include <X11/Xlib.h> /* X display */
+
+
+/* States of people -- all people are one of these 4 states */
+/* These are const char because they are displayed as ASCII if TEXT_DISPLAY 
+ *  is enabled */
+const char INFECTED = 'X';
+const char IMMUNE = 'I';
+const char SUSCEPTIBLE = 'o';
+const char DEAD = ' ';
+
+#ifdef X_DISPLAY
+const int PIXEL_WIDTH_PER_PERSON = 10;
+const int PIXEL_HEIGHT_PER_PERSON = 10;
+#endif
+
+/* PROGRAM EXECUTION BEGINS HERE */
+int main(int argc, char** argv)
+{
+    /** Declare variables **/
+    /* People */
+    int total_number_of_people = 50;
+    int total_num_initially_infected = 1;
+    int total_num_infected = 1;
+    int person1 = 0;
+    int current_infected_person = 0;
+    int current_location_x = 0;
+    int current_location_y = 0;
+    int num_susceptible = 0;
+    int num_immune = 0;
+    int num_dead = 0;
+    int current_person_id = 0;
+    int num_infected_nearby = 0;
+    int person2 = 0;
+
+    /* Environment */
+    int environment_width = 30;
+    int environment_height = 30;
+
+    /* Disease */
+    int infection_radius = 3;
+    int duration_of_disease = 50;
+    int contagiousness_factor = 30;
+    int deadliness_factor = 30;
+#ifdef SHOW_RESULTS
+    double num_infections = 0.0;
+    double num_infection_attempts = 0.0;
+    double num_deaths = 0.0;
+    double num_recovery_attempts = 0.0;
+#endif
+
+    /* Time */
+    int total_number_of_days = 250;
+    int current_day = 0;
+    int microseconds_per_day = 100000;
+
+    /* Movement */
+    int x_move_direction = 0; 
+    int y_move_direction = 0;
+
+    /* Distributed Memory Information */
+    int total_number_of_processes = 1;
+    int rank = 0;
+
+    /* getopt */
+    int c = 0;
+
+    /* Integer arrays, a.k.a. integer pointers */
+    int *x_locations;
+    int *y_locations;
+    int *infected_x_locations;
+    int *infected_y_locations;
+    int *num_days_infected;
+    int *recvcounts;
+    int *displs;
+
+    /* Character arrays, a.k.a. character pointers */
+    char *states;
+
+#ifdef TEXT_DISPLAY
+    /* Array of character arrays, a.k.a. array of character pointers, for text
+     *  display */
+    char **environment;
+#endif
+
+#ifdef X_DISPLAY
+    /* Declare X-related variables */
+    Display *display;
+    Window window;
+    int screen;
+    Atom delete_window;
+    GC gc;
+    XColor infected_color;
+    XColor immune_color;
+    XColor susceptible_color;
+    XColor dead_color;
+    Colormap colormap;
+    char red[] = "#FF0000";
+    char green[] = "#00FF00";
+    char black[] = "#000000";
+    char white[] = "#FFFFFF";
+#endif
+
+    /* ALG I: Each process determines its rank and the total number of processes     */
+    rank = 0;
+    total_number_of_processes = 1;
+
+    /* ALG II: Each process is given the parameters of the simulation */
+    /* Get command line options -- this follows the idiom presented in the
+     *  getopt man page (enter 'man 3 getopt' on the shell for more) */
+    while((c = getopt(argc, argv, "n:i:w:h:t:T:c:d:D:m:")) != -1)
+    {
+        switch(c)
+        {
+            case 'n':
+                total_number_of_people = atoi(optarg);
+                break;
+            case 'i':
+                total_num_initially_infected = atoi(optarg);
+                break;
+            case 'w':
+                environment_width = atoi(optarg);
+                break;
+            case 'h':
+                environment_height = atoi(optarg);
+                break;
+            case 't':
+                total_number_of_days = atoi(optarg);
+                break;
+            case 'T':
+                duration_of_disease = atoi(optarg);
+                break;
+            case 'c':
+                contagiousness_factor = atoi(optarg);
+                break;
+            case 'd':
+                infection_radius = atoi(optarg);
+                break;
+            case 'D':
+                deadliness_factor = atoi(optarg);
+                break;
+            case 'm':
+                microseconds_per_day = atoi(optarg);
+                break;
+                /* If the user entered "-?" or an unrecognized option, we need 
+                 *  to print a usage message before exiting. */
+            case '?':
+            default:
+                fprintf(stderr, "Usage: ");
+                fprintf(stderr, "%s [-n total_number_of_people][-i total_num_initially_infected][-w environment_width][-h environment_height][-t total_number_of_days][-T duration_of_disease][-c contagiousness_factor][-d infection_radius][-D deadliness_factor][-m microseconds_per_day]\n", argv[0]);
+                exit(-1);
+        }
+    }
+    argc -= optind;
+    argv += optind;
+
+    /* ALG III: Each process makes sure that the total number of initially 
+     *  infected people is less than the total number of people */
+    if(total_num_initially_infected > total_number_of_people)
+    {
+        fprintf(stderr, "ERROR: initial number of infected (%d) must be less than total number of people (%d)\n", total_num_initially_infected, 
+                total_number_of_people);
+        exit(-1);
+    }
+
+    /* ALG IV: Each process determines the number of people for which it is 
+     *  responsible */
+
+    /* ALG V: The last process is responsible for the remainder */
+
+    /* ALG VII: The last process is responsible for the remainder */
+
+    /* Allocate the arrays */
+    x_locations = (int*)malloc(total_number_of_people * sizeof(int));
+    y_locations = (int*)malloc(total_number_of_people * sizeof(int));
+    infected_x_locations = (int*)malloc(total_number_of_people * sizeof(int));
+    infected_y_locations = (int*)malloc(total_number_of_people * sizeof(int));
+    num_days_infected = (int*)malloc(total_number_of_people * sizeof(int));
+    recvcounts = (int*)malloc(total_number_of_processes * sizeof(int));
+    displs = (int*)malloc(total_number_of_processes * sizeof(int));
+    states = (char*)malloc(total_number_of_people * sizeof(char));
+
+#ifdef TEXT_DISPLAY
+    environment = (char**)malloc(environment_width * environment_height
+            * sizeof(char*));
+    for(current_location_x = 0;
+            current_location_x <= environment_width - 1;
+            current_location_x++)
+    {
+        environment[current_location_x] = (char*)malloc(environment_height
+                * sizeof(char));
+    }
+#endif
+
+    /* ALG VIII: Each process seeds the random number generator based on the
+     *  current time */
+    srandom(time(NULL));
+
+    /* ALG IX: Each process spawns threads to set the states of the initially 
+     *  infected people and set the count of its infected people */
+    for(current_person_id = 0; current_person_id 
+            <= total_num_initially_infected - 1; current_person_id++)
+    {
+        states[current_person_id] = INFECTED;
+        total_num_infected++;
+    }
+
+    /* ALG X: Each process spawns threads to set the states of the rest of its 
+     *  people and set the count of its susceptible people */
+    for(current_person_id = total_num_initially_infected; 
+            current_person_id <= total_number_of_people - 1; 
+            current_person_id++)
+    {
+        states[current_person_id] = SUSCEPTIBLE;
+        num_susceptible++;
+    }
+
+    /* ALG XI: Each process spawns threads to set random x and y locations for 
+     *  each of its people */
+    for(current_person_id = 0;
+            current_person_id <= total_number_of_people - 1; 
+            current_person_id++)
+    {
+        x_locations[current_person_id] = random() % environment_width;
+        y_locations[current_person_id] = random() % environment_height;
+    }
+
+    /* ALG XII: Each process spawns threads to initialize the number of days 
+     *  infected of each of its people to 0 */
+    for(current_person_id = 0;
+            current_person_id <= total_number_of_people - 1;
+            current_person_id++)
+    {
+        num_days_infected[current_person_id] = 0;
+    }
+
+    /* ALG XIII: Rank 0 initializes the graphics display */
+#ifdef X_DISPLAY
+    /* Initialize the X Windows Environment
+     * This all comes from 
+     *   http://en.wikibooks.org/wiki/X_Window_Programming/XLib
+     *   http://tronche.com/gui/x/xlib-tutorial
+     *   http://user.xmission.com/~georgeps/documentation/tutorials/
+     *      Xlib_Beginner.html
+     */
+
+    /* Open a connection to the X server */
+    display = XOpenDisplay(NULL);
+    if(display == NULL)
+    {
+        fprintf(stderr, "Error: could not open X display\n");
+    }
+    screen = DefaultScreen(display);
+    window = XCreateSimpleWindow(display, RootWindow(display, screen),
+            0, 0, environment_width * PIXEL_WIDTH_PER_PERSON, 
+            environment_height * PIXEL_HEIGHT_PER_PERSON, 1,
+            BlackPixel(display, screen), WhitePixel(display, screen));
+    delete_window = XInternAtom(display, "WM_DELETE_WINDOW", 0);
+    XSetWMProtocols(display, window, &delete_window, 1);
+    XSelectInput(display, window, ExposureMask | KeyPressMask);
+    XMapWindow(display, window);
+    colormap = DefaultColormap(display, 0);
+    gc = XCreateGC(display, window, 0, 0);
+    XParseColor(display, colormap, red, &infected_color);
+    XParseColor(display, colormap, green, &immune_color);
+    XParseColor(display, colormap, white, &dead_color);
+    XParseColor(display, colormap, black, &susceptible_color);
+    XAllocColor(display, colormap, &infected_color);
+    XAllocColor(display, colormap, &immune_color);
+    XAllocColor(display, colormap, &susceptible_color);
+    XAllocColor(display, colormap, &dead_color);
+#endif
+
+    /* ALG XIV: Each process starts a loop to run the simulation for the
+     *  specified number of days */
+    for(current_day = 0; current_day <= total_number_of_days - 1; 
+            current_day++)
+    {
+        /* ALG XIV.A: Each process determines its infected x locations and 
+         *  infected y locations */
+        current_infected_person = 0;
+        for(person1 = 0; person1 <= total_number_of_people - 1;
+                person1++)
+        {
+            if(states[person1] == INFECTED)
+            {
+                infected_x_locations[current_infected_person] =
+                    x_locations[person1];
+                infected_y_locations[current_infected_person] =
+                    y_locations[person1];
+                current_infected_person++;
+            }
+        }
+        /* ALG XIV.B: Each process sends its count of infected people to all the
+         *  other processes and receives their counts */
+
+        /* Set up the displacements in the receive buffer (see the man page for 
+         *  MPI_Allgatherv) */
+
+        /* ALG XIV.C: Each process sends the x locations of its infected people 
+         *  to all the other processes and receives the x locations of their 
+         *  infected people */
+
+        /* ALG XIV.D: Each process sends the y locations of its infected people 
+         *  to all the other processes and receives the y locations of their 
+         *  infected people */
+
+        /* ALG XIV.E: If display is enabled, Rank 0 gathers the states, x 
+         *  locations, and y locations of the people for which each process is 
+         *  responsible */
+
+        /* ALG XIV.F: If display is enabled, Rank 0 displays a graphic of the 
+         *  current day */
+#ifdef X_DISPLAY
+        XClearWindow(display, window);
+        for(current_person_id = 0; current_person_id 
+                <= total_number_of_people - 1; current_person_id++)
+        {
+            if(states[current_person_id] == INFECTED)
+            {
+                XSetForeground(display, gc, infected_color.pixel);
+            }
+            else if(states[current_person_id] == IMMUNE)
+            {
+                XSetForeground(display, gc, immune_color.pixel);
+            }
+            else if(states[current_person_id] == SUSCEPTIBLE)
+            {
+                XSetForeground(display, gc, susceptible_color.pixel);
+            }
+            else if(states[current_person_id] == DEAD)
+            {
+                XSetForeground(display, gc, dead_color.pixel);
+            }
+            else
+            {
+                fprintf(stderr, "ERROR: person %d has state '%c'\n",
+                        current_person_id, states[current_person_id]);
+                exit(-1);
+            }
+            XFillRectangle(display, window, gc,
+                    x_locations[current_person_id] 
+                    * PIXEL_WIDTH_PER_PERSON, 
+                    y_locations[current_person_id]
+                    * PIXEL_HEIGHT_PER_PERSON, 
+                    PIXEL_WIDTH_PER_PERSON, 
+                    PIXEL_HEIGHT_PER_PERSON);
+        }
+        XFlush(display);
+#endif
+#ifdef TEXT_DISPLAY
+        for(current_location_y = 0; 
+                current_location_y <= environment_height - 1;
+                current_location_y++)
+        {
+            for(current_location_x = 0; current_location_x 
+                    <= environment_width - 1; current_location_x++)
+            {
+                environment[current_location_x][current_location_y] 
+                    = ' ';
+            }
+        }
+
+        for(current_person_id = 0; 
+                current_person_id <= total_number_of_people - 1;
+                current_person_id++)
+        {
+            environment[x_locations[current_person_id]]
+                [y_locations[current_person_id]] = 
+                states[current_person_id];
+        }
+
+        printf("----------------------\n");
+        for(current_location_y = 0;
+                current_location_y <= environment_height - 1;
+                current_location_y++)
+        {
+            for(current_location_x = 0; current_location_x 
+                    <= environment_width - 1; current_location_x++)
+            {
+                printf("%c", environment[current_location_x]
+                        [current_location_y]);
+            }
+            printf("\n");
+        }
+#endif
+
+#if defined(X_DISPLAY) || defined(TEXT_DISPLAY)
+        /* Wait between frames of animation */
+        usleep(microseconds_per_day);
+#endif
+
+        /* ALG XIV.G: For each of the process’s people, each process spawns 
+         *  threads to do the following */
+        for(current_person_id = 0; current_person_id 
+                <= total_number_of_people - 1; current_person_id++)
+        {
+            /* ALG XIV.G.1: If the person is not dead, then */
+            if(states[current_person_id] != DEAD)
+            {
+                /* ALG XIV.G.1.a: The thread randomly picks whether the person 
+                 *  moves left or right or does not move in the x dimension */
+                x_move_direction = (random() % 3) - 1;
+
+                /* ALG XIV.G.1.b: The thread randomly picks whether the person 
+                 *  moves up or down or does not move in the y dimension */
+                y_move_direction = (random() % 3) - 1;
+
+                /* ALG XIV.G.1.c: If the person will remain in the bounds of the
+                 *  environment after moving, then */
+                if((x_locations[current_person_id] 
+                            + x_move_direction >= 0)
+                        && (x_locations[current_person_id] 
+                            + x_move_direction < environment_width)
+                        && (y_locations[current_person_id] 
+                            + y_move_direction >= 0)
+                        && (y_locations[current_person_id] 
+                            + y_move_direction < environment_height))
+                {
+                    /* ALG XIV.G.i: The thread moves the person */
+                    x_locations[current_person_id] 
+                        += x_move_direction;
+                    y_locations[current_person_id] 
+                        += y_move_direction;
+                }
+            }
+        }
+
+        /* ALG XIV.H: For each of the process’s people, each process spawns 
+         *  threads to do the following */
+        for(current_person_id = 0; current_person_id 
+                <= total_number_of_people - 1; current_person_id++)
+        {
+            /* ALG XIV.H.1: If the person is susceptible, then */
+            if(states[current_person_id] == SUSCEPTIBLE)
+            {
+                /* ALG XIV.H.1.a: For each of the infected people (received
+                 *  earlier from all processes) or until the number of infected 
+                 *  people nearby is 1, the thread does the following */
+                num_infected_nearby = 0;
+                for(person2 = 0; person2 <= total_num_infected - 1
+                        && num_infected_nearby < 1; person2++)
+                {
+                    /* ALG XIV.H.1.a.i: If person 1 is within the infection 
+                     *  radius, then */
+                    if((x_locations[current_person_id] 
+                                > infected_x_locations[person2]
+                                - infection_radius)
+                            && (x_locations[current_person_id] 
+                                < infected_x_locations[person2] 
+                                + infection_radius)
+                            && (y_locations[current_person_id]
+                                > infected_y_locations[person2] 
+                                - infection_radius)
+                            && (y_locations[current_person_id]
+                                < infected_y_locations[person2] 
+                                + infection_radius))
+                    {
+                        /* ALG XIV.H.1.a.i.1: The thread increments the number 
+                         *  of infected people nearby */
+                        num_infected_nearby++;
+                    }
+                }
+
+#ifdef SHOW_RESULTS
+                if(num_infected_nearby >= 1)
+                    num_infection_attempts++;
+#endif
+
+                /* ALG XIV.H.1.b: If there is at least one infected person 
+                 *  nearby, and a random number less than 100 is less than or
+                 *  equal to the contagiousness factor, then */
+                if(num_infected_nearby >= 1 && (random() % 100) 
+                        <= contagiousness_factor)
+                {
+                    /* ALG XIV.H.1.b.i: The thread changes person1’s state to 
+                     *  infected */
+                    states[current_person_id] = INFECTED;
+
+                    /* ALG XIV.H.1.b.ii: The thread updates the counters */
+                    total_num_infected++;
+                    num_susceptible--;
+
+#ifdef SHOW_RESULTS
+                    num_infections++;
+#endif
+                }
+            }
+        }
+
+        /* ALG XIV.I: For each of the process’s people, each process spawns 
+         *  threads to do the following */
+        for(current_person_id = 0; current_person_id 
+                <= total_number_of_people - 1; current_person_id++)
+        {
+            /* ALG XIV.I.1: If the person is infected and has been for the full 
+             *  duration of the disease, then */
+            if(states[current_person_id] == INFECTED
+                    && num_days_infected[current_person_id] 
+                    == duration_of_disease)
+            {
+#ifdef SHOW_RESULTS
+                num_recovery_attempts++;
+#endif
+                /* ALG XIV.I.a: If a random number less than 100 is less than 
+                 *  the deadliness factor, then */
+                if((random() % 100) < deadliness_factor)
+                {
+                    /* ALG XIV.I.a.i: The thread changes the person’s state to 
+                     *  dead */
+                    states[current_person_id] = DEAD;
+
+                    /* ALG XIV.I.a.ii: The thread updates the counters */
+                    num_dead++;
+                    total_num_infected--;
+
+#ifdef SHOW_RESULTS
+                    num_deaths++;
+#endif
+                }
+                /* ALG XIV.I.b: Otherwise, */
+                else
+                {
+                    /* ALG XIV.I.b.i: The thread changes the person’s state to 
+                     *  immune */
+                    states[current_person_id] = IMMUNE;
+
+                    /* ALG XIV.I.b.ii: The thread updates the counters */
+                    num_immune++;
+                    total_num_infected--;
+                }
+            }
+        }
+
+        /* ALG XIV.J: For each of the process’s people, each process spawns 
+         *  threads to do the following */
+        for(current_person_id = 0; current_person_id 
+                <= total_number_of_people - 1; current_person_id++)
+        {
+            /* ALG XIV.J.1: If the person is infected, then */
+            if(states[current_person_id] == INFECTED)
+            {
+                /* ALG XIV.J.1.a: Increment the number of days the person has 
+                 *  been infected */
+                num_days_infected[current_person_id]++;
+            }
+        }
+    }
+
+    /* ALG XV: If X display is enabled, then Rank 0 destroys the X Window and 
+     *  closes the display */
+#ifdef X_DISPLAY
+    XDestroyWindow(display, window);
+    XCloseDisplay(display);
+#endif
+
+#ifdef SHOW_RESULTS
+    printf("Final counts: %d susceptible, %d infected, %d immune, \
+            %d dead\nActual contagiousness: %f\nActual deadliness: \
+            %f\n", num_susceptible, total_num_infected, num_immune, 
+            num_dead,  100.0 * (num_infections / 
+                (num_infection_attempts == 0 ? 1 : num_infection_attempts)),
+            100.0 * (num_deaths / (num_recovery_attempts == 0 ? 1 
+                    : num_recovery_attempts)));
+#endif
+
+    /* Deallocate the arrays -- we have finished using the memory, so now we
+     *  "free" it back to the heap */
+#ifdef TEXT_DISPLAY 
+    for(current_location_x = environment_width - 1; 
+            current_location_x >= 0; current_location_x--)
+    {
+        free(environment[current_location_x]);
+    }
+    free(environment);
+#endif
+    free(states);
+    free(displs);
+    free(recvcounts);
+    free(num_days_infected);
+    free(infected_y_locations);
+    free(infected_x_locations);
+    free(y_locations);
+    free(x_locations);
+
+
+    /* The program has finished executing successfully */
+    return 0;
+}

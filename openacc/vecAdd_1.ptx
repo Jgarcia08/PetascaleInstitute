@@ -1,0 +1,47 @@
+      .version 3.1
+      .target sm_35
+      .address_size 64
+
+      // Cray C : Version 8.3.10  (u83060f83130i83183p83328a83009z83328)
+
+      .file	1	"vecAdd.c"
+
+      .entry main$ck_L35_2(
+               .param .u64 $$arg_b_S2_T24,
+               .param .u64 $$arg_a_S3_T25,
+               .param .u64 $$arg_c_S4_T26 )
+      {
+      .reg .pred %p<2>;
+      .reg .b32  %b<2>;
+      .reg .s32  %s<2>;
+      .reg .s64  %sd<9>;
+      .reg .f64  %fd<4>;
+      //
+      .loc                 1  35  0
+      .loc                 1  35  0
+      mov.s32              %s1, 0;                     // vecAdd.c:35 : $i_S42
+      .loc                 1  36  0
+      ld.param.u64         %sd3, [$$arg_c_S4_T26];     // vecAdd.c:36 : $$LIS_b4_T20
+      ld.param.u64         %sd2, [$$arg_a_S3_T25];     // vecAdd.c:36 : $$LIS_b5_T21
+      ld.param.u64         %sd1, [$$arg_b_S2_T24];     // vecAdd.c:36 : $$LIS_b6_T22
+      .loc                 1  35  0
+      mov.s64              %sd4, -10000;               // vecAdd.c:35 : $$Induc01_S43_T23
+$main$ck_L35_2__l7__:
+      .loc                 1  36  0
+      shl.b32              %b1, %s1, 3;                // vecAdd.c:36
+      cvt.s64.s32          %sd5, %b1;                  // vecAdd.c:36
+      add.s64              %sd6, %sd1, %sd5;           // vecAdd.c:36
+      add.s64              %sd7, %sd2, %sd5;           // vecAdd.c:36
+      ld.f64               %fd1, [%sd7];               // vecAdd.c:36 : 0[$$LIS_b5_T21,$i_S42,ex].L
+      ld.f64               %fd2, [%sd6];               // vecAdd.c:36 : 0[$$LIS_b6_T22,$i_S42,ex].L
+      add.rn.f64           %fd3, %fd1, %fd2;           // vecAdd.c:36
+      add.s64              %sd8, %sd3, %sd5;           // vecAdd.c:36
+      st.f64               [%sd8], %fd3;               // vecAdd.c:36 : 0[$$LIS_b4_T20,$i_S42].L
+      .loc                 1  35  0
+      add.s32              %s1, %s1, 1;                // vecAdd.c:35 : $i_S42
+      add.s64              %sd4, %sd4, 1;              // vecAdd.c:35 : $$Induc01_S43_T23
+      setp.lt.s64          %p1, %sd4, 0;               // vecAdd.c:35
+      @%p1 bra             $main$ck_L35_2__l7__;       // vecAdd.c:35
+      exit;
+      } // main$ck_L35_2
+
